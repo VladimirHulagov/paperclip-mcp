@@ -62,7 +62,8 @@ def _extract_context(scope):
     api_key = headers.get("x-paperclip-api-key", "")
     company_id = headers.get("x-paperclip-company-id", "")
     agent_id = headers.get("x-paperclip-agent-id", "")
-    set_context(api_key=api_key, company_id=company_id, agent_id=agent_id)
+    run_id = headers.get("x-paperclip-run-id", "")
+    set_context(api_key=api_key, company_id=company_id, agent_id=agent_id, run_id=run_id)
 
 
 @server.list_tools()

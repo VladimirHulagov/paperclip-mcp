@@ -11,22 +11,26 @@ _API_URL = os.environ.get("PAPERCLIP_API_URL", "http://localhost:3100/api")
 _current_api_key: str = ""
 _current_company_id: str = ""
 _current_agent_id: str = ""
+_current_run_id: str = ""
 
 
-def set_context(api_key: str = "", company_id: str = "", agent_id: str = ""):
-    global _current_api_key, _current_company_id, _current_agent_id
+def set_context(api_key: str = "", company_id: str = "", agent_id: str = "", run_id: str = ""):
+    global _current_api_key, _current_company_id, _current_agent_id, _current_run_id
     if api_key:
         _current_api_key = api_key
     if company_id:
         _current_company_id = company_id
     if agent_id:
         _current_agent_id = agent_id
+    _current_run_id = run_id
 
 
 def _headers() -> dict:
     h = {"Content-Type": "application/json"}
     if _current_api_key:
         h["Authorization"] = f"Bearer {_current_api_key}"
+    if _current_run_id:
+        h["X-Paperclip-Run-ID"] = _current_run_id
     return h
 
 
