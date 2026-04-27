@@ -32,6 +32,8 @@ from .tools import (
     get_company,
     list_goals,
     get_goal,
+    list_roles,
+    get_role,
 )
 
 log = logging.getLogger(__name__)
@@ -363,6 +365,27 @@ async def list_tools():
                 "required": ["approvalId"],
             },
         ),
+        types.Tool(
+            name="paperclip_list_roles",
+            description="List company roles available for hiring agents. Requires canCreateAgents permission. Returns name, slug, key, description, category, assignedAgentCount for each role.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "includeHidden": {"type": "boolean", "description": "Include hidden roles (default false)"},
+                },
+            },
+        ),
+        types.Tool(
+            name="paperclip_get_role",
+            description="Get full details of a company role including markdown description and list of agents using it. Requires canCreateAgents permission.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "roleId": {"type": "string", "description": "Role UUID"},
+                },
+                "required": ["roleId"],
+            },
+        ),
     ]
 
 
@@ -479,6 +502,10 @@ async def _dispatch(name: str, args: dict):
         return await approve_approval(args["approvalId"])
     elif name == "paperclip_reject_approval":
         return await reject_approval(args["approvalId"], reason=args.get("reason"))
+    elif name == "paperclip_list_roles":
+        return await list_roles(includeHidden=args.get("includeHidden"))
+    elif name == "paperclip_get_role":
+        return await get_role(args["roleId"])
     else:
         return {"error": f"Unknown tool: {name}"}
 

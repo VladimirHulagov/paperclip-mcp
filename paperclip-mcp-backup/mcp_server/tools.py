@@ -315,3 +315,32 @@ async def reject_approval(approvalId: str, reason: Optional[str] = None) -> Any:
     if reason is not None:
         body["reason"] = reason
     return await _request("POST", f"/approvals/{approvalId}/reject", json_body=body)
+
+
+async def _check_can_create_agents() -> Optional[str]:
+    agent = await get_current_agent()
+    if isinstance(agent, dict) and agent.get("error"):
+        return f"Cannot verify permissions: {agent.get('error')} — {agent.get('detail', '')}"
+    perms = {}
+    if isinstance(agent, dict):
+        perms = agent.get("permissions") or {}
+    if not perms.get("canCreateAgents"):
+        return "Permission denied: this action requires canCreateAgents permission"
+    return None
+
+
+async def list_roles(includeHidden: Optional[bool] = None) -> Any:
+    denied = await _check_can_create_agents()
+    if denied:
+        return {"error": denied}
+    params = {}
+    if includeHidden:
+        params["includeHidden"] = "true"
+    return await _request("GET", f"/companies/{_current_company_id}/roles", params=params)
+
+
+async def get_role(roleId: str) -> Any:
+    denied = await _check_can_create_agents()
+    if denied:
+        return {"error": denied}
+    return await _request("GET", f"/companies/{_current_company_id}/roles/{roleId}")
