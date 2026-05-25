@@ -34,6 +34,10 @@ from .tools import (
     get_goal,
     list_roles,
     get_role,
+    list_attachments,
+    download_attachment,
+    upload_attachment,
+    delete_attachment,
 )
 
 log = logging.getLogger(__name__)
@@ -386,6 +390,53 @@ async def list_tools():
                 "required": ["roleId"],
             },
         ),
+        types.Tool(
+            name="paperclip_list_attachments",
+            description="List all attachments on an issue. Returns array with id, originalFilename, contentType, byteSize, contentPath for each attachment.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "issueId": {"type": "string", "description": "Issue UUID or identifier (e.g. HWQAA-1)"},
+                },
+                "required": ["issueId"],
+            },
+        ),
+        types.Tool(
+            name="paperclip_download_attachment",
+            description="Download an attachment's content as base64. Returns filename, contentType, byteSize, and contentBase64.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "attachmentId": {"type": "string", "description": "Attachment UUID"},
+                },
+                "required": ["attachmentId"],
+            },
+        ),
+        types.Tool(
+            name="paperclip_upload_attachment",
+            description="Upload a file as an attachment to an issue. The file content must be base64-encoded. Max 10MB. Allowed types: images, PDF, text/markdown, text/plain, JSON, CSV, HTML.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "issueId": {"type": "string", "description": "Issue UUID or identifier"},
+                    "filename": {"type": "string", "description": "Original filename (e.g. report.pdf)"},
+                    "contentBase64": {"type": "string", "description": "Base64-encoded file content"},
+                    "contentType": {"type": "string", "description": "MIME type (e.g. application/pdf, image/png, text/plain)"},
+                },
+                "required": ["issueId", "filename", "contentBase64", "contentType"],
+            },
+        ),
+        types.Tool(
+            name="paperclip_delete_attachment",
+            description="Delete an attachment from an issue.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "attachmentId": {"type": "string", "description": "Attachment UUID"},
+                },
+                "required": ["attachmentId"],
+            },
+        ),
     ]
 
 
@@ -506,6 +557,19 @@ async def _dispatch(name: str, args: dict):
         return await list_roles(includeHidden=args.get("includeHidden"))
     elif name == "paperclip_get_role":
         return await get_role(args["roleId"])
+    elif name == "paperclip_list_attachments":
+        return await list_attachments(args["issueId"])
+    elif name == "paperclip_download_attachment":
+        return await download_attachment(args["attachmentId"])
+    elif name == "paperclip_upload_attachment":
+        return await upload_attachment(
+            issueId=args["issueId"],
+            filename=args["filename"],
+            contentBase64=args["contentBase64"],
+            contentType=args["contentType"],
+        )
+    elif name == "paperclip_delete_attachment":
+        return await delete_attachment(args["attachmentId"])
     else:
         return {"error": f"Unknown tool: {name}"}
 
@@ -526,6 +590,8 @@ _http_transport = StreamableHTTPServerTransport(
 )
 
 import asyncio
+
+_mcp_lock = asyncio.Lock()
 
 async def _run_http_server():
     async with _http_transport.connect() as streams:
@@ -566,9 +632,10 @@ async def app(scope, receive, send):
         if not _check_auth(scope):
             await _send_unauthorized(scope, receive, send)
             return
-        _extract_context(scope)
-        await _ensure_http_server()
-        await _http_transport.handle_request(scope, receive, send)
+        async with _mcp_lock:
+            _extract_context(scope)
+            await _ensure_http_server()
+            await _http_transport.handle_request(scope, receive, send)
     else:
         body = b"Not Found"
         await send({

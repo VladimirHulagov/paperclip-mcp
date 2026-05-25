@@ -1,3 +1,4 @@
+import base64
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -60,6 +61,53 @@ async def _request(method: str, path: str, *, params: dict = None, json_body: di
         return resp.json()
     except Exception:
         return {"raw": resp.text[:2000]}
+
+
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB, matching server MAX_ATTACHMENT_BYTES
+
+
+async def _multipart_request(
+    path: str,
+    filename: str,
+    content_bytes: bytes,
+    content_type: str,
+) -> Any:
+    url = f"{_API_URL}{path}"
+    h = {}
+    if _current_api_key:
+        h["Authorization"] = f"Bearer {_current_api_key}"
+    if _current_run_id:
+        h["X-Paperclip-Run-ID"] = _current_run_id
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        files = {"file": (filename, content_bytes, content_type)}
+        resp = await client.post(url, headers=h, files=files)
+    if resp.status_code >= 400:
+        detail = resp.text[:500]
+        return {"error": f"HTTP {resp.status_code}", "detail": detail}
+    try:
+        return resp.json()
+    except Exception:
+        return {"raw": resp.text[:2000]}
+
+
+async def _download_request(path: str) -> Any:
+    url = f"{_API_URL}{path}"
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.request("GET", url, headers=_headers())
+    if resp.status_code >= 400:
+        detail = resp.text[:500]
+        return {"error": f"HTTP {resp.status_code}", "detail": detail}
+    content_b64 = base64.b64encode(resp.content).decode("ascii")
+    cd = resp.headers.get("content-disposition", "")
+    filename = ""
+    if "filename=" in cd:
+        filename = cd.split("filename=")[-1].strip('"').strip("'")
+    return {
+        "filename": filename,
+        "contentType": resp.headers.get("content-type", "application/octet-stream"),
+        "byteSize": len(resp.content),
+        "contentBase64": content_b64,
+    }
 
 
 async def list_issues(
@@ -344,3 +392,35 @@ async def get_role(roleId: str) -> Any:
     if denied:
         return {"error": denied}
     return await _request("GET", f"/companies/{_current_company_id}/roles/{roleId}")
+
+
+async def list_attachments(issueId: str) -> Any:
+    return await _request("GET", f"/issues/{issueId}/attachments")
+
+
+async def download_attachment(attachmentId: str) -> Any:
+    return await _download_request(f"/attachments/{attachmentId}/content")
+
+
+async def upload_attachment(
+    issueId: str,
+    filename: str,
+    contentBase64: str,
+    contentType: str,
+) -> Any:
+    try:
+        content_bytes = base64.b64decode(contentBase64)
+    except Exception as e:
+        return {"error": f"Invalid base64 content: {e}"}
+    if len(content_bytes) > _MAX_UPLOAD_BYTES:
+        return {"error": f"File too large: {len(content_bytes)} bytes (max {_MAX_UPLOAD_BYTES})"}
+    return await _multipart_request(
+        f"/companies/{_current_company_id}/issues/{issueId}/attachments",
+        filename=filename,
+        content_bytes=content_bytes,
+        content_type=contentType,
+    )
+
+
+async def delete_attachment(attachmentId: str) -> Any:
+    return await _request("DELETE", f"/attachments/{attachmentId}")
